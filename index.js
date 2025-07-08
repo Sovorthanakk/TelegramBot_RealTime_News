@@ -1,6 +1,6 @@
 require("dotenv").config();
 const express = require("express");
-const { Bot } = require("grammy");
+const { Bot, InlineKeyboard } = require("grammy");
 const Parser = require("rss-parser");
 const dayjs = require("dayjs");
 
@@ -21,7 +21,7 @@ const feedUrls = [
   "https://www.theverge.com/rss/index.xml",
   "https://techcrunch.com/feed/",
   "https://www.xda-developers.com/feed/",
-  "https://hnrss.org/newest"
+  "https://hnrss.org/newest",
 ];
 
 const keywords = [
@@ -41,10 +41,13 @@ console.log("🚀 Bot is starting...");
 const sentItems = new Set();
 let lastSentDate = "";
 
-async function fetchAndSendDailyNews() {
+// Create the refresh button keyboard
+const refreshKeyboard = new InlineKeyboard().text("🔄 Refresh News", "refresh_news");
+
+async function fetchAndSendDailyNews(force = false) {
   const today = dayjs().format("YYYY-MM-DD");
 
-  if (lastSentDate === today) {
+  if (!force && lastSentDate === today) {
     console.log("✅ News already sent today. Skipping...");
     return;
   }
@@ -85,7 +88,10 @@ async function fetchAndSendDailyNews() {
     const header = `🗞️ *Tech News of the Day* — ${dayjs().format(
       "MMMM D, YYYY"
     )}`;
-    await bot.api.sendMessage(chatId, header, { parse_mode: "Markdown" });
+    await bot.api.sendMessage(chatId, header, {
+      parse_mode: "Markdown",
+      reply_markup: refreshKeyboard,
+    });
 
     for (const article of dailyArticles) {
       const message = `📰 *${article.title}*\n${article.link}`;
@@ -100,11 +106,27 @@ async function fetchAndSendDailyNews() {
   }
 }
 
+// /start command handler
+bot.command("start", async (ctx) => {
+  const message =
+    "Type /start in the bot chat → You’ll get the 🔄 button\n\n" +
+    "Click 🔄 to manually fetch tech news\n\n" +
+    "The bot will send up to 3 new articles total (not per feed)";
+  await ctx.reply(message, { reply_markup: refreshKeyboard });
+});
+
+// Handle refresh button callback
+bot.callbackQuery("refresh_news", async (ctx) => {
+  await ctx.answerCallbackQuery(); // Acknowledge button press
+  await ctx.reply("🔍 Fetching latest tech news...");
+  await fetchAndSendDailyNews(true);
+});
+
 // Run once on startup
 fetchAndSendDailyNews();
 
-// Then check every hour, but only send once per day
-setInterval(fetchAndSendDailyNews, 60 * 60 * 1000); // every hour
+// Check every hour, send once per day unless forced
+setInterval(fetchAndSendDailyNews, 60 * 60 * 1000);
 
 bot.start();
 console.log("✅ Bot is running...");
